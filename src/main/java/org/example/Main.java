@@ -1,6 +1,8 @@
 package org.example;
 
 import io.vertx.core.Vertx;
+import org.example.polling.PollingProcessorVerticle;
+import org.example.polling.PollingSchedulerVerticle;
 import org.example.server.DBVerticle;
 import org.example.server.NmsServerVerticle;
 import org.slf4j.Logger;
@@ -21,9 +23,21 @@ public class Main {
 
                     return vertx.deployVerticle(new DBVerticle());
                 })
+//                .compose(res-> {
+//
+//                    logger.info("DB Verticle started successfully");
+//
+//                    return vertx.deployVerticle(new PollingProcessorVerticle());
+//                })
+//                .compose(res-> {
+//
+//                    logger.info("processor Verticle started successfully");
+//
+//                    return vertx.deployVerticle(new PollingSchedulerVerticle());
+//                })
                 .onSuccess(res-> {
 
-                    logger.info("DB Verticle started successfully");
+                    logger.info("scheduler Verticle started successfully");
 
                     logger.info("All Verticles started successfully");
                 })

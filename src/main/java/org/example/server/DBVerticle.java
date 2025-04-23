@@ -95,7 +95,7 @@ public class DBVerticle extends AbstractVerticle
                 id SERIAL PRIMARY KEY,
                 job_id INT NOT NULL REFERENCES provisioning_jobs(id) ON DELETE CASCADE,
                 data JSONB NOT NULL,
-                polled_at BIGINT
+                polled_at TEXT NOT NULL
             );
             """;
 

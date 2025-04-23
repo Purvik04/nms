@@ -38,6 +38,8 @@ public class Constants
 
     public static final String EVENTBUS_DATABASE_ADDRESS = "database.query.execute";
 
+    public static final String EVENTBUS_POLLING_PROCESSOR_ADDRESS = "polling.processor";
+
     public static final String MESSAGE_BODY_REQUIRED = "Body is empty";
 
     public static final String MESSAGE_ID_REQUIRED = "ID is required";

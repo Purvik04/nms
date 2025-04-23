@@ -4,6 +4,8 @@ import io.vertx.ext.web.RoutingContext;
 
 public class Utils {
 
+    private static final String REGEX_IPV4 = "^((25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)(\\.|$)){4}$";
+
     public static String getTableNameFromContext(RoutingContext context)
     {
         String path  = context.normalizedPath().split("/")[1];
@@ -22,30 +24,24 @@ public class Utils {
 
     public static boolean isValidIPv4(String ip)
     {
-        if (ip == null || ip.isEmpty()) return false;
+        return ip != null && ip.matches(REGEX_IPV4);
+    }
 
-        var parts = ip.split("\\.");
-
-        if (parts.length != 4) return false;
-
-        for (var part : parts)
-        {
-            try
-            {
-                var num = Integer.parseInt(part);
-
-                if (num < 0 || num > 255) return false;
-
-                // Disallow leading zeros (e.g. "01", "001")
-                if (part.length() > 1 && part.startsWith("0")) return false;
-
-            }
-            catch (Exception exception)
-            {
-                return false;
-            }
+    public static boolean runPing(String ip) {
+        try {
+            var process = new ProcessBuilder("ping", "-c", "1", ip).start();
+            return process.waitFor() == 0;
+        } catch (Exception e) {
+            return false;
         }
+    }
 
-        return true;
+    public static boolean runPortCheck(String ip, int port) {
+        try (var socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress(ip, port), 2000);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

@@ -31,21 +31,7 @@ public class ProvisioningRouter {
             }
         });
 
-        router.get("/getCredentials").handler(dbService::getAll);
-
-        router.get("/:id").handler(context ->
-        {
-            var id = context.pathParam("id");
-
-            if (id == null || id.isEmpty())
-            {
-                context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
-            }
-            else
-            {
-                dbService.getById(id, context);
-            }
-        });
+        router.get("/getAll").handler(dbService::getAll);
 
         router.delete("/:id").handler(context ->
         {
