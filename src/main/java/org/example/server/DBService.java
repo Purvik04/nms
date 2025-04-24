@@ -9,8 +9,10 @@ import org.example.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class DBService {
+import java.util.HashMap;
 
+public class DBService
+{
     private final Vertx vertx;
 
     private static String ID = "id";
@@ -24,7 +26,7 @@ public class DBService {
         this.vertx = vertx;
     }
 
-    public void create(JsonObject requestBody, RoutingContext context)
+    public void create(JsonObject requestBody, RoutingContext context) throws InterruptedException
     {
         formattedRequestBody.clear();
 
@@ -89,111 +91,6 @@ public class DBService {
         executeQuery(query, context);
     }
 
-    public void runDiscovery(String id, RoutingContext context) {
-        formattedRequestBody.clear();
-
-        var query = """
-            SELECT
-              d.id AS discovery_id,
-              d.discovery_profile_name,
-              d.ip,
-              d.port,
-              c.credentials
-            FROM
-              discovery_profiles d
-            JOIN
-              credential_profiles c
-            ON
-              d.credential_profile_id = c.id
-            WHERE
-              d.id = $1;
-        """;
-
-        var queryObj = new JsonObject()
-                .put("query", query)
-                .put("params", new JsonArray().add(Integer.parseInt(id)));
-
-        vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, queryObj, reply -> {
-            if (reply.failed()) {
-                context.response().setStatusCode(500).end("DB error: " + reply.cause().getMessage());
-                return;
-            }
-
-            var result = (JsonObject) reply.result().body();
-            if (!result.getBoolean(Constants.SUCCESS)) {
-                context.response().setStatusCode(500).end("DB query failed: " + result.getString(Constants.ERROR));
-                return;
-            }
-
-            var data = result.getJsonArray(Constants.DATA);
-            if (data.isEmpty()) {
-                context.response().setStatusCode(404).end("Discovery ID not found.");
-                return;
-            }
-
-            var device = data.getJsonObject(0);
-            var ip = device.getString("ip");
-            var port = device.getInteger("port");
-            var credentials = device.getJsonObject("credentials");
-            var discoveryId = device.getInteger("discovery_id");
-
-            // Start discovery in worker thread
-            vertx.executeBlocking(promise -> {
-                var success = Utils.runPing(ip);
-                if (!success) {
-                    promise.complete(new JsonObject().put("success", false).put("step", "ping"));
-                    return;
-                }
-
-                success = Utils.runPortCheck(ip, port);
-                if (!success) {
-                    promise.complete(new JsonObject().put("success", false).put("step", "port"));
-                    return;
-                }
-
-//                var sshSuccess = runSSHPluginTest(ip, port, credentials);
-//                if (!sshSuccess) {
-//                    promise.complete(new JsonObject().put("success", false).put("step", "ssh"));
-//                    return;
-//                }
-
-                promise.complete(new JsonObject().put("success", true));
-            }, res -> {
-                var resultObj = (JsonObject) res.result();
-                var success = resultObj.getBoolean("success");
-                var step = resultObj.getString("step", "all");
-
-                // Save result to DB
-                var updateQuery = """
-                UPDATE discovery_profiles
-                SET status = $1
-                WHERE id = $2
-                RETURNING id;
-            """;
-
-                var status = success ? "true" : "false";
-
-                var updateObj = new JsonObject()
-                        .put("query", updateQuery)
-                        .put("params", new JsonArray().add(Boolean.parseBoolean(status)).add(discoveryId));
-
-                vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, updateObj, updateReply -> {
-                    if (updateReply.failed()) {
-                        context.response().setStatusCode(500).end("Failed to update discovery status");
-                        return;
-                    }
-
-                    if (success) {
-                        context.response().end("✅ Discovery successful");
-                    } else {
-                        context.response().end("❌ Discovery failed at step: " + step);
-                    }
-                });
-            });
-        });
-    }
-
-
     public void addForProvision(String id, RoutingContext context)
     {
         formattedRequestBody.clear();
@@ -215,6 +112,7 @@ public class DBService {
                             context.response()
                                     .setStatusCode(500)
                                     .end(new JsonObject().put(Constants.ERROR, result.getString(Constants.ERROR)).encodePrettily());
+
                             return;
                         }
 
@@ -225,6 +123,7 @@ public class DBService {
                             context.response()
                                     .setStatusCode(404)
                                     .end(new JsonObject().put(Constants.ERROR, "Discovery profile not found").encodePrettily());
+
                             return;
                         }
 
@@ -297,5 +196,150 @@ public class DBService {
         });
     }
 
+    public void runDiscovery(JsonArray ids, RoutingContext ctx) {
 
+        var placeholders = QueryBuilder.buildPlaceholders(ids.size());
+
+        String fetchQuery = "SELECT dp.id, dp.ip, dp.port, cp.credentials FROM discovery_profiles dp " +
+                "JOIN credential_profiles cp ON dp.credential_profile_id = cp.id " +
+                "WHERE dp.id IN (" + placeholders + ")";
+
+        JsonObject request = new JsonObject()
+                .put("query", fetchQuery)
+                .put("params", ids);
+
+        vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, request, dbRes ->
+        {
+            if (dbRes.failed())
+            {
+                ctx.response().setStatusCode(500).end("DB query failed");
+
+                return;
+            }
+
+            var resBody = (JsonObject) dbRes.result().body();
+
+            if (!resBody.getBoolean("success") || resBody.getJsonArray("data").isEmpty())
+            {
+                ctx.response().setStatusCode(404).end("No discovery data found");
+
+                return;
+            }
+
+            var deviceData = resBody.getJsonArray("data");
+
+            logger.info("Processing fping of : {}", deviceData);
+
+            vertx.executeBlocking(promise -> {
+
+                var responseArray = new JsonArray();
+
+                for (int i = 0; i < deviceData.size(); i++)
+                {
+                    responseArray.add(new JsonObject()
+                            .put("id", deviceData.getJsonObject(i).getInteger("id"))
+                            .put("success", false)
+                            .put("reason", "ping failed"));
+                }
+
+                var aliveDevices = Utils.runFping(deviceData);
+
+                if (aliveDevices.isEmpty())
+                {
+                    promise.complete(responseArray);
+
+                    return;
+                }
+
+                logger.info("Processing SSH discovery of : {}", aliveDevices);
+
+                var sshOutput = Utils.runGoPlugin(aliveDevices, "discovery");
+
+                if (sshOutput.isEmpty())
+                {
+                    promise.complete(responseArray);
+
+                    return;
+                }
+
+                logger.info("Discovery Process Completed");
+
+                var sshDiscoveredDevices = new JsonArray(sshOutput);
+
+                logger.info(sshDiscoveredDevices.toString());
+
+                // Create map of id -> result from plugin
+                var resultMap = new HashMap<Integer, JsonObject>();
+                for (int i = 0; i < sshDiscoveredDevices.size(); i++)
+                {
+                    var obj = sshDiscoveredDevices.getJsonObject(i);
+
+                    resultMap.put(obj.getInteger("id"), obj);
+                }
+
+                var batchParams = new JsonArray();
+
+                // Update the response array in-place
+                for (int i = 0; i < responseArray.size(); i++)
+                {
+                    var response = responseArray.getJsonObject(i);
+
+                    var id = response.getInteger("id");
+
+                    if (resultMap.containsKey(id))
+                    {
+                        var pluginResult = resultMap.get(id);
+
+                        boolean success = pluginResult.getBoolean("success");
+
+                        String step = pluginResult.getString("step");
+
+                        response.put("success", success);
+                        response.put("reason", step);
+                    }
+
+                    batchParams.add(new JsonArray()
+                            .add(response.getBoolean("success"))
+                            .add(id));
+                }
+
+                // Prepare batch update
+                var updateRequest = new JsonObject()
+                        .put("query", "UPDATE discovery_profiles SET status = $1 WHERE id = $2")
+                        .put("params", batchParams);
+
+                // Send update to batch consumer
+                vertx.eventBus().request(Constants.EVENTBUS_BATCH_UPDATE_ADDRESS, updateRequest, updateRes ->
+                {
+                    if (updateRes.failed())
+                    {
+                        logger.error("Batch update failed: {}", updateRes.cause().getMessage());
+
+                        promise.complete(responseArray); // still return results
+                    }
+                    else
+                    {
+                        logger.info("Batch update completed");
+
+                        promise.complete(responseArray);
+                    }
+                });
+
+            }, false, result ->
+            {
+                if (result.failed())
+                {
+                    ctx.response().setStatusCode(500).end("Discovery failed");
+                }
+                else
+                {
+                    var responseArray = (JsonArray) result.result();
+
+                    ctx.response()
+                            .putHeader("Content-Type", "application/json")
+                            .end(responseArray.encodePrettily());
+                }
+            });
+        });
+    }
 }

@@ -6,53 +6,59 @@ import io.vertx.core.eventbus.Message;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.example.utils.Constants;
+import org.example.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
 
-public class PollingProcessorVerticle extends AbstractVerticle {
-
+public class PollingProcessorVerticle extends AbstractVerticle
+{
     private static final Logger logger = LoggerFactory.getLogger(PollingProcessorVerticle.class);
 
     @Override
-    public void start(Promise<Void> startPromise) {
+    public void start(Promise<Void> startPromise)
+    {
         vertx.eventBus().consumer(Constants.EVENTBUS_POLLING_PROCESSOR_ADDRESS, this::handlePollingBatch);
-        logger.info("⚙️ Polling Processor started and listening for batches");
+
         startPromise.complete();
     }
 
-    private void handlePollingBatch(Message<JsonArray> message) {
-        JsonArray deviceBatch = message.body();
+    private void handlePollingBatch(Message<JsonArray> message)
+    {
+        var deviceBatch = message.body();
+
         logger.info("📥 Received device batch of size: {}", deviceBatch.size());
 
-        // Serialize the batch to string to pass to the Go plugin
-        String inputJson = deviceBatch.encode();
+        vertx.executeBlocking(promise ->
+        {
+            var pluginOutput = Utils.runGoPlugin(deviceBatch, "metrics");
 
-        vertx.executeBlocking(promise -> {
-            try {
-                String pluginOutput = runGoPluginSync(inputJson);
-                promise.complete(pluginOutput);
-            } catch (Exception e) {
-                promise.fail(e);
-            }
-        },false, res -> {
-            if (res.succeeded()) {
-                String pluginOutput = (String) res.result();
+            promise.complete(pluginOutput);
+        },false, res ->
+        {
+            if (res.succeeded())
+            {
+                var pluginOutput = (String) res.result();
 
                 JsonArray processedData;
-                try {
+                try
+                {
                     processedData = new JsonArray(pluginOutput);
-                } catch (Exception e) {
+                }
+                catch (Exception e)
+                {
                     logger.error("❌ Failed to parse Go plugin output as JSON: {}", e.getMessage());
+
                     return;
                 }
 
                 logger.info("✅ Plugin processed batch, sending {} entries to DB", processedData.size());
 
-                logger.info(processedData.toString());
                 sendToDatabase(processedData);
-            } else {
+            }
+            else
+            {
                 logger.error("❌ Go plugin execution failed: {}", res.cause().getMessage());
             }
         });
@@ -83,41 +89,45 @@ public class PollingProcessorVerticle extends AbstractVerticle {
         return output.toString();
     }
 
-    private void sendToDatabase(JsonArray polledResults) {
-        for (int i = 0; i < polledResults.size(); i++) {
+    private void sendToDatabase(JsonArray polledResults)
+    {
+        var batchParams = new JsonArray();
+
+        for (int i = 0; i < polledResults.size(); i++){
+
             var deviceResult = polledResults.getJsonObject(i);
 
             var jobId = deviceResult.getInteger("id");
+
             var data = deviceResult.getJsonObject("data");
+
             var polledAt = deviceResult.getString("polled_at");
 
-            var insertQuery = """
-            INSERT INTO provisioned_data (job_id, data, polled_at)
-            VALUES ($1, $2::jsonb, $3)
-        """;
-
-            var params = new JsonArray()
+            batchParams.add(new JsonArray()
                     .add(jobId)
                     .add(data) // send JSONObject
-                    .add(polledAt);
-
-            var dbRequest = new JsonObject()
-                    .put("query", insertQuery)
-                    .put("params", params);
-
-            vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, dbRequest, reply -> {
-                if (reply.succeeded()) {
-                    var response = (JsonObject) reply.result().body();
-                    if (response.getBoolean(Constants.SUCCESS)) {
-                        logger.info("✅ Inserted provisioned data for job_id {}", jobId);
-                    } else {
-                        logger.error("❌ DB insert error for job_id {}: {}", jobId, response.getString(Constants.ERROR));
-                    }
-                } else {
-                    logger.error("❌ Failed to send DB insert request for job_id {}: {}", jobId, reply.cause().getMessage());
-                }
-            });
+                    .add(polledAt));
         }
+
+        var insertQuery = """
+                INSERT INTO provisioned_data (job_id, data, polled_at)
+                VALUES ($1, $2::jsonb, $3)
+            """;
+
+        var request = new JsonObject()
+                .put("query", insertQuery)
+                .put("params", batchParams);
+
+        vertx.eventBus().request(Constants.EVENTBUS_BATCH_UPDATE_ADDRESS, request, reply -> {
+            if (reply.failed())
+            {
+                logger.error("Batch update of provision failed: {}", reply.cause().getMessage());
+            }
+            else
+            {
+                logger.info("Batch update of provision completed");
+            }
+        });
     }
 
 }

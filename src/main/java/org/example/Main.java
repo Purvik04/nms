@@ -23,18 +23,18 @@ public class Main {
 
                     return vertx.deployVerticle(new DBVerticle());
                 })
-//                .compose(res-> {
-//
-//                    logger.info("DB Verticle started successfully");
-//
-//                    return vertx.deployVerticle(new PollingProcessorVerticle());
-//                })
-//                .compose(res-> {
-//
-//                    logger.info("processor Verticle started successfully");
-//
-//                    return vertx.deployVerticle(new PollingSchedulerVerticle());
-//                })
+                .compose(res-> {
+
+                    logger.info("DB Verticle started successfully");
+
+                    return vertx.deployVerticle(new PollingProcessorVerticle());
+                })
+                .compose(res-> {
+
+                    logger.info("processor Verticle started successfully");
+
+                    return vertx.deployVerticle(new PollingSchedulerVerticle());
+                })
                 .onSuccess(res-> {
 
                     logger.info("scheduler Verticle started successfully");

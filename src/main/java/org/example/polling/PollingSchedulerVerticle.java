@@ -30,8 +30,6 @@ public class PollingSchedulerVerticle extends AbstractVerticle {
 
         vertx.setPeriodic(300_000, id -> runPollingScheduler());
 
-        logger.info("🕒 Polling Scheduler started successfully");
-
         startPromise.complete();
     }
 

@@ -46,4 +46,6 @@ public class Constants
 
     public static final String MESSAGE_WRONG_IPV4_ADDRESS = "Wrong IPv4 address";
 
+    public static final String EVENTBUS_BATCH_UPDATE_ADDRESS = "batch.update";
+
 }

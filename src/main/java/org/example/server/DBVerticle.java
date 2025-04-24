@@ -13,6 +13,9 @@ import org.example.utils.Constants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class DBVerticle extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(DBVerticle.class);
@@ -126,6 +129,8 @@ public class DBVerticle extends AbstractVerticle
 
             setupEventBusConsumer();
 
+            setupBatchUpdateConsumer();
+
             promise.complete();
 
             return;
@@ -215,6 +220,59 @@ public class DBVerticle extends AbstractVerticle
             }
         });
     }
+
+    private void setupBatchUpdateConsumer() {
+        vertx.eventBus().consumer(Constants.EVENTBUS_BATCH_UPDATE_ADDRESS, message -> {
+            var input = (JsonObject) message.body();
+
+            try {
+                var query = input.getString("query");
+                var paramArray = input.getJsonArray("params"); // Expects an array of arrays (JsonArray of JsonArray)
+
+                if (query == null || paramArray == null || paramArray.isEmpty()) {
+                    message.reply(new JsonObject()
+                            .put(Constants.SUCCESS, false)
+                            .put(Constants.ERROR, "Invalid or missing query/params"));
+                    return;
+                }
+
+                // Convert each JsonArray inside paramArray into Tuple
+                List<Tuple> batchParams = new ArrayList<>();
+                for (int i = 0; i < paramArray.size(); i++) {
+                    JsonArray inner = paramArray.getJsonArray(i);
+                    Tuple tuple = Tuple.tuple();
+                    for (int j = 0; j < inner.size(); j++) {
+                        tuple.addValue(inner.getValue(j));
+                    }
+                    batchParams.add(tuple);
+                }
+
+                logger.info("Executing Batch Query: {} with {} parameter sets", query, batchParams.size());
+
+                client.preparedQuery(query).executeBatch(batchParams, ar -> {
+                    if (ar.succeeded()) {
+                        message.reply(new JsonObject()
+                                .put(Constants.SUCCESS, true)
+                                .put(Constants.DATA, "Batch update successful"));
+                    } else {
+                        logger.error("❌ Batch query failed: {}", ar.cause().getMessage());
+
+                        message.reply(new JsonObject()
+                                .put(Constants.SUCCESS, false)
+                                .put(Constants.ERROR, ar.cause().getMessage()));
+                    }
+                });
+
+            } catch (Exception e) {
+                logger.error("❌ Exception during batch update: {}", e.getMessage());
+
+                message.reply(new JsonObject()
+                        .put(Constants.SUCCESS, false)
+                        .put(Constants.ERROR, e.getMessage()));
+            }
+        });
+    }
+
 
     @Override
     public void stop() {

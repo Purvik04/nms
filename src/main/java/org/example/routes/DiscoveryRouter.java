@@ -32,25 +32,29 @@ public class DiscoveryRouter {
                     }
                     else
                     {
-                        dbService.create(body.toJsonObject(), context);
+                        try {
+                            dbService.create(body.toJsonObject(), context);
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
                 }));
 
+        router.post("/run/").handler(context ->
+
+            context.request().bodyHandler(body ->
+            {
+                if(body == null || body.length() == 0)
+                {
+                    context.response().setStatusCode(400).end(Constants.MESSAGE_BODY_REQUIRED);
+                }
+                else
+                {
+                    dbService.runDiscovery(body.toJsonObject().getJsonArray("ids") , context);
+                }
+            }));
+
         router.get("/getAll").handler(dbService::getAll);
-
-        router.get("/run/:id").handler(context ->
-        {
-            var id = context.pathParam("id");
-
-            if (id == null || id.isEmpty())
-            {
-                context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
-            }
-            else
-            {
-                dbService.runDiscovery(id, context);
-            }
-        });
 
         router.get("/:id").handler(context ->
         {

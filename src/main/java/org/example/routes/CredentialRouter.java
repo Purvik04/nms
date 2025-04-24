@@ -27,7 +27,11 @@ public class CredentialRouter {
                     }
                     else
                     {
-                       dbService.create(body.toJsonObject(), context);
+                        try {
+                            dbService.create(body.toJsonObject(), context);
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
 
                 }));

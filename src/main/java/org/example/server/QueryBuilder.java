@@ -19,10 +19,6 @@ public class QueryBuilder
 
         var columns = input.getJsonArray(COLUMNS, new JsonArray());
 
-        var idColumn = input.getString("idColumn", "id");
-
-        var idValue = input.getString("idValue");
-
         var params = new JsonArray();
 
         var query = new StringBuilder();
@@ -107,7 +103,7 @@ public class QueryBuilder
         return new JsonObject().put("query", query.toString()).put("params", params);
     }
 
-    private static String buildPlaceholders(int count)
+    public static String buildPlaceholders(int count)
     {
         var sb = new StringBuilder();
 
