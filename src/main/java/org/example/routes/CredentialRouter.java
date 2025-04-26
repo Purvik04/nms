@@ -2,8 +2,9 @@ package org.example.routes;
 
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.Router;
-import org.example.server.DBService;
+import org.example.service.DBService;
 import org.example.utils.Constants;
+import org.example.utils.Utils;
 
 public class CredentialRouter {
 
@@ -25,15 +26,14 @@ public class CredentialRouter {
                     {
                         context.response().setStatusCode(400).end(Constants.MESSAGE_BODY_REQUIRED);
                     }
+                    else if (!Utils.validateRequest(body.toJsonObject(), context))
+                    {
+                        context.response().setStatusCode(400).end(Constants.MESSAGE_INCORRECT_BODY);
+                    }
                     else
                     {
-                        try {
-                            dbService.create(body.toJsonObject(), context);
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
+                        dbService.create(body.toJsonObject(), context);
                     }
-
                 }));
 
         router.get("/getCredentials").handler(dbService::getAll);
@@ -63,6 +63,10 @@ public class CredentialRouter {
                     else if(body == null || body.length() == 0)
                     {
                         context.response().setStatusCode(400).end(Constants.MESSAGE_BODY_REQUIRED);
+                    }
+                    else if (!Utils.validateRequest(body.toJsonObject(), context))
+                    {
+                        context.response().setStatusCode(400).end(Constants.MESSAGE_INCORRECT_BODY);
                     }
                     else
                     {

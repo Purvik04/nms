@@ -129,8 +129,6 @@ public class DBVerticle extends AbstractVerticle
 
             setupEventBusConsumer();
 
-            setupBatchUpdateConsumer();
-
             promise.complete();
 
             return;
@@ -157,60 +155,108 @@ public class DBVerticle extends AbstractVerticle
 
             var input = (JsonObject) message.body();
 
-            try {
+            try
+            {
+                var query = input.getString(Constants.QUERY);
 
-                var query = input.getString("query");
-
-                if ((query.trim().toLowerCase().startsWith(Constants.DB_INSERT) || query.trim().toLowerCase().startsWith(Constants.DB_UPDATE)) && !query.toLowerCase().contains("returning"))
-                {
+                if ((query.trim().toLowerCase().startsWith(Constants.DB_INSERT) || query.trim().toLowerCase().startsWith(Constants.DB_UPDATE)) && !query.toLowerCase().contains("returning")) {
                     query += RETURNING_ID;
                 }
 
-                var paramArray = input.getJsonArray("params", new JsonArray());
+                var paramArray = input.getJsonArray(Constants.PARAMS, new JsonArray());
 
-                var params = Tuple.tuple();
-
-                for (int i = 0; i < paramArray.size(); i++)
+                if (!paramArray.isEmpty() && paramArray.getValue(0) instanceof JsonArray)
                 {
-                    params.addValue(paramArray.getValue(i));
-                }
+                    var batchParams = new ArrayList<Tuple>();
 
-                logger.info("Executing Query: {}",query);
-
-                client.preparedQuery(query).execute(params, ar ->
-                {
-                    if (ar.succeeded())
+                    for (int i = 0; i < paramArray.size(); i++)
                     {
-                        var rows = ar.result();
+                        var inner = paramArray.getJsonArray(i);
 
-                        var jsonRows = new JsonArray();
+                        var tuple = Tuple.tuple();
 
-                        rows.forEach(row ->
+                        for (int j = 0; j < inner.size(); j++) {
+                            tuple.addValue(inner.getValue(j));
+                        }
+                        batchParams.add(tuple);
+                    }
+
+                    logger.info("Executing Batch Query: {} with {} parameter sets", query, batchParams.size());
+
+                    client.preparedQuery(query).executeBatch(batchParams, ar ->
+                    {
+                        if (ar.succeeded())
                         {
-                            var obj = new JsonObject();
+                            logger.info("Batch query executed successfully");
 
-                            for (int i = 0; i < row.size(); i++)
-                            {
-                                obj.put(row.getColumnName(i), row.getValue(i));
-                            }
+                            message.reply(new JsonObject()
+                                    .put(Constants.SUCCESS, true)
+                                    .put(Constants.DATA, "Batch update successful"));
+                        }
+                        else
+                        {
+                            logger.error("❌ Batch query failed: {}", ar.cause().getMessage());
 
-                            jsonRows.add(obj);
-                        });
+                            message.reply(new JsonObject()
+                                    .put(Constants.SUCCESS, false)
+                                    .put(Constants.ERROR, ar.cause().getMessage()));
+                        }
+                    });
+                }
+                else
+                {
+                    var tuple = Tuple.tuple();
 
-                        message.reply(new JsonObject()
-                                .put(Constants.SUCCESS, true)
-                                .put(Constants.DATA, jsonRows));
+                    // Handle single param which is a List (e.g., List<Integer> for ANY($1))
+                    if (paramArray.size() == 1 && paramArray.getValue(0) instanceof List)
+                    {
+                        tuple.addArrayOfInteger((Integer[]) paramArray.getValue(0)); // directly add the List
                     }
                     else
                     {
-                        logger.error("❌ Query failed: {}", ar.cause().getMessage());
-
-                        message.reply(new JsonObject()
-                                .put(Constants.SUCCESS, false)
-                                .put(Constants.ERROR, ar.cause().getMessage()));
+                        for (int i = 0; i < paramArray.size(); i++)
+                        {
+                            tuple.addValue(paramArray.getValue(i));
+                        }
                     }
-                });
 
+                    logger.error(tuple.toString());
+
+                    logger.info("Executing Query: {}", query);
+
+                    client.preparedQuery(query).execute(tuple, ar ->
+                    {
+                        if (ar.succeeded())
+                        {
+                            var rows = ar.result();
+
+                            var jsonRows = new JsonArray();
+
+                            rows.forEach(row ->
+                            {
+                                var obj = new JsonObject();
+
+                                for (int i = 0; i < row.size(); i++)
+                                {
+                                    obj.put(row.getColumnName(i), row.getValue(i));
+                                }
+                                jsonRows.add(obj);
+                            });
+
+                            message.reply(new JsonObject()
+                                    .put(Constants.SUCCESS, true)
+                                    .put(Constants.DATA, jsonRows));
+                        }
+                        else
+                        {
+                            logger.error("❌ Query failed: {}", ar.cause().getMessage());
+
+                            message.reply(new JsonObject()
+                                    .put(Constants.SUCCESS, false)
+                                    .put(Constants.ERROR, ar.cause().getMessage()));
+                        }
+                    });
+                }
             }
             catch (Exception exception)
             {
@@ -220,59 +266,6 @@ public class DBVerticle extends AbstractVerticle
             }
         });
     }
-
-    private void setupBatchUpdateConsumer() {
-        vertx.eventBus().consumer(Constants.EVENTBUS_BATCH_UPDATE_ADDRESS, message -> {
-            var input = (JsonObject) message.body();
-
-            try {
-                var query = input.getString("query");
-                var paramArray = input.getJsonArray("params"); // Expects an array of arrays (JsonArray of JsonArray)
-
-                if (query == null || paramArray == null || paramArray.isEmpty()) {
-                    message.reply(new JsonObject()
-                            .put(Constants.SUCCESS, false)
-                            .put(Constants.ERROR, "Invalid or missing query/params"));
-                    return;
-                }
-
-                // Convert each JsonArray inside paramArray into Tuple
-                List<Tuple> batchParams = new ArrayList<>();
-                for (int i = 0; i < paramArray.size(); i++) {
-                    JsonArray inner = paramArray.getJsonArray(i);
-                    Tuple tuple = Tuple.tuple();
-                    for (int j = 0; j < inner.size(); j++) {
-                        tuple.addValue(inner.getValue(j));
-                    }
-                    batchParams.add(tuple);
-                }
-
-                logger.info("Executing Batch Query: {} with {} parameter sets", query, batchParams.size());
-
-                client.preparedQuery(query).executeBatch(batchParams, ar -> {
-                    if (ar.succeeded()) {
-                        message.reply(new JsonObject()
-                                .put(Constants.SUCCESS, true)
-                                .put(Constants.DATA, "Batch update successful"));
-                    } else {
-                        logger.error("❌ Batch query failed: {}", ar.cause().getMessage());
-
-                        message.reply(new JsonObject()
-                                .put(Constants.SUCCESS, false)
-                                .put(Constants.ERROR, ar.cause().getMessage()));
-                    }
-                });
-
-            } catch (Exception e) {
-                logger.error("❌ Exception during batch update: {}", e.getMessage());
-
-                message.reply(new JsonObject()
-                        .put(Constants.SUCCESS, false)
-                        .put(Constants.ERROR, e.getMessage()));
-            }
-        });
-    }
-
 
     @Override
     public void stop() {

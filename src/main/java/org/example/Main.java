@@ -5,6 +5,7 @@ import org.example.polling.PollingProcessorVerticle;
 import org.example.polling.PollingSchedulerVerticle;
 import org.example.server.DBVerticle;
 import org.example.server.NmsServerVerticle;
+import org.example.service.QueryBuilderVerticle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,14 +28,20 @@ public class Main {
 
                     logger.info("DB Verticle started successfully");
 
-                    return vertx.deployVerticle(new PollingProcessorVerticle());
+                    return vertx.deployVerticle(new QueryBuilderVerticle());
                 })
-                .compose(res-> {
-
-                    logger.info("processor Verticle started successfully");
-
-                    return vertx.deployVerticle(new PollingSchedulerVerticle());
-                })
+//                .compose(res-> {
+//
+//                    logger.info("DB Verticle started successfully");
+//
+//                    return vertx.deployVerticle(new PollingProcessorVerticle());
+//                })
+//                .compose(res-> {
+//
+//                    logger.info("processor Verticle started successfully");
+//
+//                    return vertx.deployVerticle(new PollingSchedulerVerticle());
+//                })
                 .onSuccess(res-> {
 
                     logger.info("scheduler Verticle started successfully");

@@ -18,6 +18,20 @@ public class Utils {
 
     private static final Logger logger = LoggerFactory.getLogger(Utils.class);
 
+    public static String buildPlaceholders(int count)
+    {
+        var sb = new StringBuilder();
+
+        for (int i = 1; i <= count; i++)
+        {
+            sb.append("$").append(i);
+
+            if (i < count) sb.append(", ");
+        }
+
+        return sb.toString();
+    }
+
     public static String getTableNameFromContext(RoutingContext context)
     {
         String path  = context.normalizedPath().split("/")[1];
@@ -30,13 +44,50 @@ public class Utils {
 
             case "provision" -> "provisioning_jobs";
 
-            default -> throw new IllegalArgumentException("Unknown path: " + path);
+            default -> "";
         };
     }
 
     public static boolean isValidIPv4(String ip)
     {
         return ip != null && ip.matches(REGEX_IPV4);
+    }
+
+    public static boolean validateRequest(JsonObject requestBody,RoutingContext context) {
+
+        var tableName = getTableNameFromContext(context);
+
+        return switch (tableName)
+        {
+            case "credential_profiles" -> validateCredentialProfiles(requestBody);
+
+            case "discovery_profiles" -> validateDiscoveryProfiles(requestBody);
+
+            default -> false;
+        };
+    }
+
+    private static boolean validateCredentialProfiles(JsonObject requestBody)
+    {
+        return requestBody.containsKey("credential_profile_name")
+                && requestBody.getValue("credential_profile_name") instanceof String
+                && requestBody.containsKey("system_type")
+                && requestBody.getValue("system_type") instanceof String
+                && requestBody.containsKey("credentials")
+                && requestBody.getValue("credentials") instanceof JsonObject;
+    }
+
+    private static boolean validateDiscoveryProfiles(JsonObject requestBody)
+    {
+        return requestBody.containsKey("discovery_profile_name")
+                && requestBody.getValue("discovery_profile_name") instanceof String
+                && requestBody.containsKey("credential_profile_id")
+                && requestBody.getValue("credential_profile_id") instanceof Integer
+                && requestBody.containsKey("ip")
+                && requestBody.getValue("ip") instanceof String
+                && isValidIPv4(requestBody.getValue("ip").toString())
+                && requestBody.containsKey("port")
+                && requestBody.getValue("port") instanceof Integer;
     }
 
     public static JsonArray runFping(JsonArray devices) {
@@ -137,6 +188,8 @@ public class Utils {
             if (exitCode != 0)
             {
                 logger.warn("Plugin exited with non-zero code: {}",exitCode);
+
+                return "";
             }
         }
         catch (Exception exception)
@@ -148,39 +201,4 @@ public class Utils {
 
         return output.toString();
     }
-
-//    public static void main(String[] args) {
-//        JsonArray devices = new JsonArray()
-//                .add(new JsonObject()
-//                        .put("id", 1)
-//                        .put("ip", "10.20.40.253")  // Alive (as per your example)
-//                        .put("port", 22)
-//                        .put("credentials", new JsonObject()
-//                                .put("username", "purvik")
-//                                .put("password", "Mind@123")))
-//                .add(new JsonObject()
-//                        .put("id", 2)
-//                        .put("ip", "192.168.1.10")  // Dead
-//                        .put("port", 22)
-//                        .put("credentials", new JsonObject()
-//                                .put("username", "test2")
-//                                .put("password", "pass2")))
-//                .add(new JsonObject()
-//                        .put("id", 3)
-//                        .put("ip", "123.40.35.45")  // Dead
-//                        .put("port", 22)
-//                        .put("credentials", new JsonObject()
-//                                .put("username", "test3")
-//                                .put("password", "pass3")));
-//
-//        // Call your runFping function
-//        var aliveDevices = Utils.runFping(devices);
-//
-//        System.out.println(aliveDevices);
-//
-//        var sshOutput = Utils.runSSHDiscovery(aliveDevices);
-//
-//        System.out.println(sshOutput);
-//    }
-
 }

@@ -1,6 +1,7 @@
-package org.example.server;
+package org.example.service;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
@@ -15,7 +16,7 @@ public class DBService
 {
     private final Vertx vertx;
 
-    private static String ID = "id";
+    private final EventBus eventBus;
 
     private static final Logger logger = LoggerFactory.getLogger(DBService.class);
 
@@ -24,9 +25,11 @@ public class DBService
     public DBService(Vertx vertx)
     {
         this.vertx = vertx;
+
+        this.eventBus = vertx.eventBus();
     }
 
-    public void create(JsonObject requestBody, RoutingContext context) throws InterruptedException
+    public void create(JsonObject requestBody, RoutingContext context)
     {
         formattedRequestBody.clear();
 
@@ -34,9 +37,7 @@ public class DBService
                 .put(Constants.TABLE_NAME, Utils.getTableNameFromContext(context))
                 .put(Constants.DATA, requestBody);
 
-        var query = QueryBuilder.buildQuery(formattedRequestBody);
-
-        executeQuery(query, context);
+       sendToQueryBuilder(formattedRequestBody, context);
     }
 
     public void getById(String id, RoutingContext context)
@@ -45,11 +46,9 @@ public class DBService
 
         formattedRequestBody.put(Constants.OPERATION, Constants.DB_SELECT)
                             .put(Constants.TABLE_NAME, Utils.getTableNameFromContext(context))
-                            .put(Constants.CONDITIONS , new JsonObject().put(ID, Integer.parseInt(id)));
+                            .put(Constants.CONDITIONS , new JsonObject().put(Constants.ID, Integer.parseInt(id)));
 
-        var query = QueryBuilder.buildQuery(formattedRequestBody);
-
-        executeQuery(query, context);
+        sendToQueryBuilder(formattedRequestBody, context);
     }
 
     public void getAll(RoutingContext context)
@@ -59,9 +58,7 @@ public class DBService
         formattedRequestBody.put(Constants.OPERATION, Constants.DB_SELECT)
                             .put(Constants.TABLE_NAME, Utils.getTableNameFromContext(context));
 
-        var query = QueryBuilder.buildQuery(formattedRequestBody);
-
-        executeQuery(query, context);
+        sendToQueryBuilder(formattedRequestBody, context);
     }
 
     public void update(String id,JsonObject requestBody, RoutingContext context)
@@ -71,11 +68,9 @@ public class DBService
         formattedRequestBody.put(Constants.OPERATION, Constants.DB_UPDATE)
                 .put(Constants.TABLE_NAME, Utils.getTableNameFromContext(context))
                 .put(Constants.DATA, requestBody)
-                .put(Constants.CONDITIONS , new JsonObject().put(ID, Integer.parseInt(id)));
+                .put(Constants.CONDITIONS , new JsonObject().put(Constants.ID, Integer.parseInt(id)));
 
-        var query = QueryBuilder.buildQuery(formattedRequestBody);
-
-        executeQuery(query, context);
+        sendToQueryBuilder(formattedRequestBody, context);
     }
 
     public void delete(String id, RoutingContext context)
@@ -84,11 +79,9 @@ public class DBService
 
         formattedRequestBody.put(Constants.OPERATION, Constants.DB_DELETE)
                 .put(Constants.TABLE_NAME, Utils.getTableNameFromContext(context))
-                .put(Constants.CONDITIONS , new JsonObject().put(ID, Integer.parseInt(id)));
+                .put(Constants.CONDITIONS , new JsonObject().put(Constants.ID, Integer.parseInt(id)));
 
-        var query = QueryBuilder.buildQuery(formattedRequestBody);
-
-        executeQuery(query, context);
+        sendToQueryBuilder(formattedRequestBody, context);
     }
 
     public void addForProvision(String id, RoutingContext context)
@@ -97,15 +90,19 @@ public class DBService
 
         formattedRequestBody.put(Constants.OPERATION, Constants.DB_SELECT)
                 .put(Constants.TABLE_NAME, "discovery_profiles")
-                .put(Constants.CONDITIONS , new JsonObject().put(ID, Integer.parseInt(id)));
+                .put(Constants.CONDITIONS , new JsonObject().put(Constants.ID, Integer.parseInt(id)));
 
-        var query = QueryBuilder.buildQuery(formattedRequestBody);
-
-        vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, query,reply ->
+        // Send the request to the query builder
+        eventBus.request(Constants.EVENTBUS_QUERYBUILDER_ADDRESS, formattedRequestBody,reply ->
         {
-                    if (reply.succeeded())
+            if(reply.succeeded())
+            {
+                //send query to database for execution
+                eventBus.request(Constants.EVENTBUS_DATABASE_ADDRESS, reply.result().body(),dbReply ->
+                {
+                    if (dbReply.succeeded())
                     {
-                        var result = (JsonObject) reply.result().body();
+                        var result = (JsonObject) dbReply.result().body();
 
                         if (!result.getBoolean(Constants.SUCCESS, false))
                         {
@@ -145,13 +142,11 @@ public class DBService
                         formattedRequestBody.put(Constants.OPERATION, Constants.DB_INSERT)
                                 .put(Constants.TABLE_NAME, Utils.getTableNameFromContext(context))
                                 .put(Constants.DATA, new JsonObject()
-                                        .put("ip", discoveryProfile.getString("ip"))
-                                        .put("port", discoveryProfile.getInteger("port"))
-                                        .put("credential_profile_id", discoveryProfile.getInteger("credential_profile_id")));
+                                        .put(Constants.IP, discoveryProfile.getString(Constants.IP))
+                                        .put(Constants.PORT, discoveryProfile.getInteger(Constants.PORT))
+                                        .put(Constants.CREDENTIAL_PROFILE_ID, discoveryProfile.getInteger(Constants.CREDENTIAL_PROFILE_ID)));
 
-                        var query2 = QueryBuilder.buildQuery(formattedRequestBody);
-
-                        executeQuery(query2, context);
+                        sendToQueryBuilder(formattedRequestBody, context);
                     }
                     else
                     {
@@ -160,11 +155,37 @@ public class DBService
                                 .end(new JsonObject().put(Constants.ERROR, "DBService failed: " + reply.cause().getMessage()).encodePrettily());
                     }
                 });
+            }
+            else
+            {
+                context.response()
+                        .setStatusCode(500)
+                        .end(new JsonObject().put(Constants.ERROR, "DBService failed: " + reply.cause().getMessage()).encodePrettily());
+
+            }
+        });
     }
 
+    public void sendToQueryBuilder(JsonObject formattedRequest, RoutingContext context)
+    {
+        eventBus.request(Constants.EVENTBUS_QUERYBUILDER_ADDRESS, formattedRequest,reply ->
+        {
+            if(reply.succeeded())
+            {
+                executeQuery((JsonObject) reply.result().body() , context);
+            }
+            else
+            {
+                context.response()
+                        .setStatusCode(500)
+                        .end(new JsonObject().put(Constants.ERROR, "DBService failed: " + reply.cause().getMessage()).encodePrettily());
+
+            }
+        });
+    }
     public void executeQuery(JsonObject query, RoutingContext context)
     {
-        vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, query, ar -> {
+        eventBus.request(Constants.EVENTBUS_DATABASE_ADDRESS, query, ar -> {
 
             if (ar.succeeded())
             {
@@ -198,17 +219,17 @@ public class DBService
 
     public void runDiscovery(JsonArray ids, RoutingContext ctx) {
 
-        var placeholders = QueryBuilder.buildPlaceholders(ids.size());
+        var placeholders = Utils.buildPlaceholders(ids.size());
 
-        String fetchQuery = "SELECT dp.id, dp.ip, dp.port, cp.credentials FROM discovery_profiles dp " +
+        var fetchQuery = "SELECT dp.id, dp.ip, dp.port, cp.credentials FROM discovery_profiles dp " +
                 "JOIN credential_profiles cp ON dp.credential_profile_id = cp.id " +
                 "WHERE dp.id IN (" + placeholders + ")";
 
-        JsonObject request = new JsonObject()
-                .put("query", fetchQuery)
-                .put("params", ids);
+        var request = new JsonObject()
+                .put(Constants.QUERY, fetchQuery)
+                .put(Constants.PARAMS, ids);
 
-        vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, request, dbRes ->
+        eventBus.request(Constants.EVENTBUS_DATABASE_ADDRESS, request, dbRes ->
         {
             if (dbRes.failed())
             {
@@ -217,27 +238,27 @@ public class DBService
                 return;
             }
 
-            var resBody = (JsonObject) dbRes.result().body();
-
-            if (!resBody.getBoolean("success") || resBody.getJsonArray("data").isEmpty())
+            vertx.executeBlocking(promise ->
             {
-                ctx.response().setStatusCode(404).end("No discovery data found");
+                var resBody = (JsonObject) dbRes.result().body();
 
-                return;
-            }
+                if (!resBody.getBoolean("success") || resBody.getJsonArray(Constants.DATA).isEmpty())
+                {
+                    ctx.response().setStatusCode(404).end("No discovery data found");
 
-            var deviceData = resBody.getJsonArray("data");
+                    return;
+                }
 
-            logger.info("Processing fping of : {}", deviceData);
+                var deviceData = resBody.getJsonArray(Constants.DATA);
 
-            vertx.executeBlocking(promise -> {
+                logger.info("Processing fping of : {}", deviceData);
 
                 var responseArray = new JsonArray();
 
                 for (int i = 0; i < deviceData.size(); i++)
                 {
                     responseArray.add(new JsonObject()
-                            .put("id", deviceData.getJsonObject(i).getInteger("id"))
+                            .put(Constants.ID, deviceData.getJsonObject(i).getInteger(Constants.ID))
                             .put("success", false)
                             .put("reason", "ping failed"));
                 }
@@ -253,10 +274,12 @@ public class DBService
 
                 logger.info("Processing SSH discovery of : {}", aliveDevices);
 
-                var sshOutput = Utils.runGoPlugin(aliveDevices, "discovery");
+                var sshOutput = Utils.runGoPlugin(aliveDevices, Constants.DISCOVERY);
 
                 if (sshOutput.isEmpty())
                 {
+                    logger.error("Go plugin execution failed");
+
                     promise.complete(responseArray);
 
                     return;
@@ -270,11 +293,12 @@ public class DBService
 
                 // Create map of id -> result from plugin
                 var resultMap = new HashMap<Integer, JsonObject>();
+
                 for (int i = 0; i < sshDiscoveredDevices.size(); i++)
                 {
                     var obj = sshDiscoveredDevices.getJsonObject(i);
 
-                    resultMap.put(obj.getInteger("id"), obj);
+                    resultMap.put(obj.getInteger(Constants.ID), obj);
                 }
 
                 var batchParams = new JsonArray();
@@ -284,7 +308,7 @@ public class DBService
                 {
                     var response = responseArray.getJsonObject(i);
 
-                    var id = response.getInteger("id");
+                    var id = response.getInteger(Constants.ID);
 
                     if (resultMap.containsKey(id))
                     {
@@ -305,23 +329,21 @@ public class DBService
 
                 // Prepare batch update
                 var updateRequest = new JsonObject()
-                        .put("query", "UPDATE discovery_profiles SET status = $1 WHERE id = $2")
-                        .put("params", batchParams);
+                        .put(Constants.QUERY, "UPDATE discovery_profiles SET status = $1 WHERE id = $2")
+                        .put(Constants.PARAMS, batchParams);
 
                 // Send update to batch consumer
-                vertx.eventBus().request(Constants.EVENTBUS_BATCH_UPDATE_ADDRESS, updateRequest, updateRes ->
+                eventBus.request(Constants.EVENTBUS_DATABASE_ADDRESS, updateRequest, updateRes ->
                 {
-                    if (updateRes.failed())
-                    {
-                        logger.error("Batch update failed: {}", updateRes.cause().getMessage());
+                    var jsonResponse = (JsonObject) updateRes.result().body();
 
-                        promise.complete(responseArray); // still return results
+                    if (jsonResponse.getBoolean("success", false))
+                    {
+                        promise.complete(responseArray);
                     }
                     else
                     {
-                        logger.info("Batch update completed");
-
-                        promise.complete(responseArray);
+                        promise.fail(jsonResponse.getString("error"));
                     }
                 });
 

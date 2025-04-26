@@ -18,7 +18,7 @@ public class NmsServerVerticle extends AbstractVerticle {
     @Override
     public void start(Promise<Void> startPromise)
     {
-        Router mainRouter = Router.router(vertx);
+        var mainRouter = Router.router(vertx);
 
         mainRouter.route("/").handler(BodyHandler.create());
 

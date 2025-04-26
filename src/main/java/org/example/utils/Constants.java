@@ -44,8 +44,29 @@ public class Constants
 
     public static final String MESSAGE_ID_REQUIRED = "ID is required";
 
+    public static final String MESSAGE_INCORRECT_BODY = "Incorrect body";
+
     public static final String MESSAGE_WRONG_IPV4_ADDRESS = "Wrong IPv4 address";
 
-    public static final String EVENTBUS_BATCH_UPDATE_ADDRESS = "batch.update";
+    public static final String  QUERY = "query";
 
+    public static final String  PARAMS = "params";
+
+    public static final String  ID = "id";
+
+    public static final String  POLLED_AT = "polled_at";
+
+    public static final String IP = "ip";
+
+    public static final String PORT = "port";
+
+    public static final String CREDENTIAL_PROFILE_ID = "credential_profile_id";
+
+    public static final String CREDENTIALS = "credentials";
+
+    public static final String METRICS = "metrics";
+
+    public static final String DISCOVERY = "discovery";
+
+    public static final String EVENTBUS_QUERYBUILDER_ADDRESS = "query.builder";
 }

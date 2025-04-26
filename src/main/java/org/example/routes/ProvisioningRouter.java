@@ -2,7 +2,7 @@ package org.example.routes;
 
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.Router;
-import org.example.server.DBService;
+import org.example.service.DBService;
 import org.example.utils.Constants;
 
 public class ProvisioningRouter {

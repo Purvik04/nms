@@ -45,8 +45,8 @@ public class PollingSchedulerVerticle extends AbstractVerticle {
         var params = new JsonArray().add(BATCH_SIZE).add(offset);
 
         var request = new JsonObject()
-                .put("query", QUERY_FETCH_JOBS)
-                .put("params", params);
+                .put(Constants.QUERY, QUERY_FETCH_JOBS)
+                .put(Constants.PARAMS, params);
 
         vertx.eventBus().request(Constants.EVENTBUS_DATABASE_ADDRESS, request, reply ->
         {
@@ -75,12 +75,12 @@ public class PollingSchedulerVerticle extends AbstractVerticle {
                 }
                 else
                 {
-                    logger.error("❌ DB query failed: " + response.getString(Constants.ERROR));
+                    logger.error("❌ DB query failed: {}" , response.getString(Constants.ERROR));
                 }
             }
             else
             {
-                logger.error("❌ DB call failed: " + reply.cause().getMessage());
+                logger.error("❌ DB call failed: {}" ,reply.cause().getMessage());
             }
         });
     }
