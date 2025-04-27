@@ -1,55 +1,35 @@
 package org.example.routes;
 
 import io.vertx.core.Vertx;
-import io.vertx.ext.web.Router;
-import org.example.service.DBService;
+import io.vertx.ext.web.RoutingContext;
 import org.example.utils.Constants;
 
-public class ProvisioningRouter {
-
-    private final Router router;
-
-    private final DBService dbService;
-
+public class ProvisioningRouter extends AbstractRouter
+{
     public ProvisioningRouter(Vertx vertx)
     {
-        this.router = Router.router(vertx);
+        super(vertx);
+    }
 
-        this.dbService = new DBService(vertx);
-
-        router.post("/startProvision/:id").handler(context ->
-        {
-            var id = context.pathParam("id");
-
-            if (id == null || id.isEmpty())
-            {
-                context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
-            }
-            else
-            {
-                dbService.addForProvision(id, context);
-            }
-        });
+    @Override
+    public void initRoutes()
+    {
+        router.post("/startProvision/:id").handler(this::handleStartProvision);
 
         router.get("/getAll").handler(dbService::getAll);
 
-        router.delete("/:id").handler(context ->
-        {
-            var id = context.pathParam("id");
-
-            if (id == null || id.isEmpty())
-            {
-                context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
-            }
-            else
-            {
-                dbService.delete(id, context);
-            }
-        });
+        router.delete("/:id").handler(this::handleDelete);
     }
 
-    public Router getProvisioningRouter()
+    private void handleStartProvision(RoutingContext context)
     {
-        return router;
+        var id = context.pathParam(Constants.ID);
+
+        if (id == null || id.isEmpty())
+        {
+            context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
+        } else {
+            dbService.addForProvision(id, context);
+        }
     }
 }

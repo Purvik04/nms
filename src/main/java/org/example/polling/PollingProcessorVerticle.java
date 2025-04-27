@@ -16,7 +16,7 @@ public class PollingProcessorVerticle extends AbstractVerticle
 
     private static final String QUERY_INSERT_PROVISIONED_DATA = """
             INSERT INTO provisioned_data (job_id, data, polled_at)
-            VALUES ($1, $2::jsonb, $3)
+            VALUES ($1, $2, $3)
         """;
 
     @Override

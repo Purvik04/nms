@@ -8,8 +8,8 @@ import org.example.utils.Constants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class PollingSchedulerVerticle extends AbstractVerticle {
-
+public class PollingSchedulerVerticle extends AbstractVerticle
+{
     private static final Logger logger = LoggerFactory.getLogger(PollingSchedulerVerticle.class);
 
     private static final int BATCH_SIZE = 2;
@@ -25,17 +25,14 @@ public class PollingSchedulerVerticle extends AbstractVerticle {
     @Override
     public void start(Promise<Void> startPromise)
     {
-        //Run after 1 minute, then every 5 minutes
-        vertx.setTimer(10000, id -> runPollingScheduler());
-
-        vertx.setPeriodic(300_000, id -> runPollingScheduler());
+        vertx.setPeriodic(60_000, 300_000, id -> runPollingScheduler());
 
         startPromise.complete();
     }
 
     private void runPollingScheduler()
     {
-        logger.info("🔁 Polling cycle started");
+        logger.info("Polling cycle started");
 
         fetchBatch(0);
     }
@@ -60,7 +57,7 @@ public class PollingSchedulerVerticle extends AbstractVerticle {
 
                     if (!data.isEmpty())
                     {
-                        logger.info("📦 Sending batch of size " + data.size() + " to PollingProcessor");
+                        logger.info("Sending batch of size {}", data.size() + " to PollingProcessor");
 
                         logger.info(data.toString());
 
@@ -70,17 +67,17 @@ public class PollingSchedulerVerticle extends AbstractVerticle {
                     }
                     else
                     {
-                        logger.info("✅ All provisioning jobs processed");
+                        logger.info("All provisioning jobs are processed");
                     }
                 }
                 else
                 {
-                    logger.error("❌ DB query failed: {}" , response.getString(Constants.ERROR));
+                    logger.error("DB query failed: {}" , response.getString(Constants.ERROR));
                 }
             }
             else
             {
-                logger.error("❌ DB call failed: {}" ,reply.cause().getMessage());
+                logger.error("DB call failed: {}" ,reply.cause().getMessage());
             }
         });
     }

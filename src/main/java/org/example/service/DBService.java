@@ -244,7 +244,7 @@ public class DBService
 
                 if (!resBody.getBoolean("success") || resBody.getJsonArray(Constants.DATA).isEmpty())
                 {
-                    ctx.response().setStatusCode(404).end("No discovery data found");
+                    promise.fail("No discovery data found");
 
                     return;
                 }
@@ -316,7 +316,7 @@ public class DBService
 
                         boolean success = pluginResult.getBoolean("success");
 
-                        String step = pluginResult.getString("step");
+                        var step = pluginResult.getString("step");
 
                         response.put("success", success);
                         response.put("reason", step);
@@ -351,15 +351,11 @@ public class DBService
             {
                 if (result.failed())
                 {
-                    ctx.response().setStatusCode(500).end("Discovery failed");
+                    ctx.response().setStatusCode(404).end(result.cause().getMessage());
                 }
                 else
                 {
-                    var responseArray = (JsonArray) result.result();
-
-                    ctx.response()
-                            .putHeader("Content-Type", "application/json")
-                            .end(responseArray.encodePrettily());
+                    ctx.json(result.result());
                 }
             });
         });

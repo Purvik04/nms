@@ -34,7 +34,7 @@ public class Utils {
 
     public static String getTableNameFromContext(RoutingContext context)
     {
-        String path  = context.normalizedPath().split("/")[1];
+        String path  = context.normalizedPath().split("/")[2];
 
         return switch (path)
         {
@@ -144,7 +144,7 @@ public class Utils {
             process.waitFor(5, TimeUnit.SECONDS);
 
         }
-        catch (Exception e)
+        catch (Exception exception)
         {
             return aliveDevices;
         }

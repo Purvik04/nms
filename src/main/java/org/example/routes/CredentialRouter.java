@@ -1,98 +1,25 @@
 package org.example.routes;
 
 import io.vertx.core.Vertx;
-import io.vertx.ext.web.Router;
-import org.example.service.DBService;
-import org.example.utils.Constants;
-import org.example.utils.Utils;
 
-public class CredentialRouter {
-
-    private final Router router;
-
-    private final DBService dbService;
-
+public class CredentialRouter extends AbstractRouter
+{
     public CredentialRouter(Vertx vertx)
     {
-        this.router = Router.router(vertx);
+        super(vertx);
+    }
 
-        this.dbService = new DBService(vertx);
-
-        router.post("/createCredential").handler(context ->
-
-                context.request().bodyHandler(body ->
-                {
-                    if(body == null || body.length() == 0)
-                    {
-                        context.response().setStatusCode(400).end(Constants.MESSAGE_BODY_REQUIRED);
-                    }
-                    else if (!Utils.validateRequest(body.toJsonObject(), context))
-                    {
-                        context.response().setStatusCode(400).end(Constants.MESSAGE_INCORRECT_BODY);
-                    }
-                    else
-                    {
-                        dbService.create(body.toJsonObject(), context);
-                    }
-                }));
+    @Override
+    public void initRoutes()
+    {
+        router.post("/createCredential").handler(this::handleCreate);
 
         router.get("/getCredentials").handler(dbService::getAll);
 
-        router.get("/:id").handler(context ->
-        {
-            var id = context.pathParam("id");
+        router.get("/:id").handler(this::handleGetById);
 
-            if (id == null || id.isEmpty())
-            {
-                context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
-            }
-            else
-            {
-                dbService.getById(id, context);
-            }
-        });
+        router.put("/:id").handler(this::handleUpdate);
 
-        router.put("/:id").handler(context ->
-
-                context.request().bodyHandler(body ->
-                {
-                    if (context.pathParam("id") == null || context.pathParam("id").isEmpty())
-                    {
-                        context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
-                    }
-                    else if(body == null || body.length() == 0)
-                    {
-                        context.response().setStatusCode(400).end(Constants.MESSAGE_BODY_REQUIRED);
-                    }
-                    else if (!Utils.validateRequest(body.toJsonObject(), context))
-                    {
-                        context.response().setStatusCode(400).end(Constants.MESSAGE_INCORRECT_BODY);
-                    }
-                    else
-                    {
-                        dbService.update(context.pathParam("id"), body.toJsonObject(), context);
-                    }
-                }));
-
-        router.delete("/:id").handler(context ->
-        {
-            var id = context.pathParam("id");
-
-            if (id == null || id.isEmpty())
-            {
-                context.response().setStatusCode(400).end(Constants.MESSAGE_ID_REQUIRED);
-            }
-            else
-            {
-                dbService.delete(id, context);
-            }
-        });
-    }
-
-    public Router getCredentialRouter()
-    {
-        return router;
+        router.delete("/:id").handler(this::handleDelete);
     }
 }
-
-

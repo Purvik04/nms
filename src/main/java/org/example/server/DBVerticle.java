@@ -125,7 +125,7 @@ public class DBVerticle extends AbstractVerticle
     {
         if (index >= queries.length)
         {
-            logger.info("✅ All tables are verified/created.");
+            logger.info("All tables are verified/created.");
 
             setupEventBusConsumer();
 
@@ -142,7 +142,7 @@ public class DBVerticle extends AbstractVerticle
             }
             else
             {
-                logger.error("❌ Table creation failed: {}", ar.cause().getMessage());
+                logger.error("Table creation failed: {}", ar.cause().getMessage());
 
                 promise.fail(ar.cause());
             }
